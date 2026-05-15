@@ -5,6 +5,7 @@ from services.retro_service import (
     save_action_items,
     get_retro_by_id
 )
+from services.pdf_service import generate_retro_pdf
 
 APP_URL = "https://scrum-retrospective-app.streamlit.app"
 
@@ -51,14 +52,38 @@ def show():
         unsafe_allow_html=True
     )
 
-    with st.container(border=True):
-        st.caption(
-            "PUBLIC SUMMARY LINK — Share with team for retro call"
+    # Public link + PDF download side by side
+    col_link, col_pdf = st.columns([3, 1])
+
+    with col_link:
+        with st.container(border=True):
+            st.caption(
+                "PUBLIC SUMMARY LINK — Share with team for retro call"
+            )
+            st.code(
+                f"{APP_URL}/?token={session.get('summary_token')}",
+                language=None
+            )
+
+    with col_pdf:
+        st.markdown(
+            "<div style='height:0.5rem'></div>",
+            unsafe_allow_html=True
         )
-        st.code(
-            f"{APP_URL}/?token={session.get('summary_token')}",
-            language=None
-        )
+        try:
+            pdf_bytes = generate_retro_pdf(session, summary)
+            st.download_button(
+                label="⬇ Download PDF",
+                data=pdf_bytes,
+                file_name=(
+                    f"{session['sprint_name'].replace(' ', '_')}"
+                    f"_Retro_Summary.pdf"
+                ),
+                mime="application/pdf",
+                use_container_width=True
+            )
+        except Exception as e:
+            st.error(f"PDF error: {str(e)}")
 
     st.markdown(
         "<div style='height:0.75rem'></div>",
@@ -88,11 +113,11 @@ def _readonly(summary, session, session_id):
             else:
                 st.caption("No content.")
 
-    # Regenerate button in readonly mode too
     st.markdown(
         "<div style='height:0.75rem'></div>",
         unsafe_allow_html=True
     )
+
     if st.button(
         "🔄 Regenerate AI Summary",
         use_container_width=True
@@ -156,7 +181,6 @@ def _editable(session_id, session, summary):
                 type="primary"
             )
 
-    # Regenerate button outside form
     if st.button(
         "🔄 Regenerate AI Summary",
         use_container_width=True
@@ -192,7 +216,7 @@ def _editable(session_id, session, summary):
 
 def _regenerate(session_id, session):
     from services.ollama_service import generate_summary
-    confirm = st.warning(
+    st.warning(
         "This will overwrite the current AI summary. "
         "Any manual edits will be lost."
     )
@@ -210,10 +234,7 @@ def _regenerate(session_id, session):
             ):
                 try:
                     generate_summary(session_id)
-                    st.toast(
-                        "Summary regenerated!",
-                        icon="✅"
-                    )
+                    st.toast("Summary regenerated!", icon="✅")
                     st.rerun()
                 except Exception as e:
                     st.error(str(e))

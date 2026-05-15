@@ -4,3 +4,4 @@ requests
 supabase
 groq
 pillow>=10.4.0
+fpdf2
