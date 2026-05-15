@@ -25,6 +25,7 @@ def show():
         )
         if st.button("← Back", use_container_width=True):
             st.session_state['summary_edit_mode'] = False
+            st.session_state['show_regen_confirm'] = False
             st.session_state['page'] = 'sm_dashboard'
             st.rerun()
 
@@ -54,7 +55,7 @@ def show():
         unsafe_allow_html=True
     )
 
-    # Public link + PDF download side by side
+    # Public link + PDF download
     col_link, col_pdf = st.columns([3, 1])
 
     with col_link:
@@ -100,35 +101,35 @@ def show():
 
 
 def _readonly(summary, session, session_id):
-    # Action buttons row
     col_edit, col_regen = st.columns(2)
 
     with col_edit:
         if st.button(
-            "✏️ Edit Summary",
+            "Edit Summary",
             use_container_width=True,
             type="primary"
         ):
             st.session_state['summary_edit_mode'] = True
+            st.session_state['show_regen_confirm'] = False
             st.rerun()
 
     with col_regen:
         if st.button(
-            "🔄 Regenerate AI Summary",
+            "Regenerate AI Summary",
             use_container_width=True
         ):
             st.session_state['show_regen_confirm'] = True
             st.rerun()
 
-    # Regenerate confirmation
-    if st.session_state.get('show_regen_confirm'):
-        _regen_confirm(session_id, session)
-        return
-
     st.markdown(
         "<div style='height:0.75rem'></div>",
         unsafe_allow_html=True
     )
+
+    # Regenerate confirmation
+    if st.session_state.get('show_regen_confirm'):
+        _regen_confirm(session_id, session, summary)
+        return
 
     # Read only sections
     sections = [
@@ -197,7 +198,6 @@ def _editable(session_id, session, summary, came_from_readonly=False):
         )
 
         if came_from_readonly:
-            # Came from approved retro — only save button
             col1, col2 = st.columns(2)
             with col1:
                 save = st.form_submit_button(
@@ -212,7 +212,6 @@ def _editable(session_id, session, summary, came_from_readonly=False):
                 )
             approve = False
         else:
-            # Came from closed retro — save + approve
             col1, col2, col3 = st.columns(3)
             with col1:
                 save = st.form_submit_button(
@@ -232,21 +231,21 @@ def _editable(session_id, session, summary, came_from_readonly=False):
                 )
 
     # Regenerate button outside form
-    if not came_from_readonly:
-        if st.button(
-            "🔄 Regenerate AI Summary",
-            use_container_width=True
-        ):
-            st.session_state['show_regen_confirm'] = True
-            st.rerun()
+    if st.button(
+        "Regenerate AI Summary",
+        use_container_width=True
+    ):
+        st.session_state['show_regen_confirm'] = True
+        st.rerun()
 
     # Regenerate confirmation
     if st.session_state.get('show_regen_confirm'):
-        _regen_confirm(session_id, session)
+        _regen_confirm(session_id, session, summary)
         return
 
     if cancel:
         st.session_state['summary_edit_mode'] = False
+        st.session_state['show_regen_confirm'] = False
         st.rerun()
 
     if save:
@@ -278,11 +277,27 @@ def _editable(session_id, session, summary, came_from_readonly=False):
         st.rerun()
 
 
-def _regen_confirm(session_id, session):
-    st.warning(
-        "This will overwrite the current AI summary. "
-        "Any manual edits will be lost."
-    )
+def _regen_confirm(session_id, session, summary):
+    """
+    Shows regenerate confirmation with strong warning
+    if summary has been manually edited.
+    """
+    is_edited = summary.get('is_edited', 0)
+
+    if is_edited:
+        st.error(
+            "⚠️ You have manually edited this summary. "
+            "Regenerating will replace everything with fresh AI output "
+            "from the original team responses. "
+            "All your manual edits will be permanently lost."
+        )
+    else:
+        st.warning(
+            "Regenerating will replace the current AI summary "
+            "with a fresh one generated from team responses. "
+            "This cannot be undone."
+        )
+
     col1, col2 = st.columns(2)
     with col1:
         if st.button(
