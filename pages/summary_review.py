@@ -6,6 +6,8 @@ from services.retro_service import (
     get_retro_by_id
 )
 
+APP_URL = "https://scrum-retrospective-app.streamlit.app"
+
 
 def show():
     session_id = st.session_state.get('review_session_id')
@@ -54,8 +56,7 @@ def show():
             "PUBLIC SUMMARY LINK — Share with team for retro call"
         )
         st.code(
-            f"http://localhost:8501/?token="
-            f"{session.get('summary_token')}",
+            f"{APP_URL}/?token={session.get('summary_token')}",
             language=None
         )
 
@@ -65,12 +66,12 @@ def show():
     )
 
     if readonly:
-        _readonly(summary)
+        _readonly(summary, session, session_id)
     else:
         _editable(session_id, session, summary)
 
 
-def _readonly(summary):
+def _readonly(summary, session, session_id):
     sections = [
         ("What Went Well", "went_well_summary"),
         ("What Can Be Improved", "improve_summary"),
@@ -86,6 +87,17 @@ def _readonly(summary):
                         st.write(line.strip())
             else:
                 st.caption("No content.")
+
+    # Regenerate button in readonly mode too
+    st.markdown(
+        "<div style='height:0.75rem'></div>",
+        unsafe_allow_html=True
+    )
+    if st.button(
+        "🔄 Regenerate AI Summary",
+        use_container_width=True
+    ):
+        _regenerate(session_id, session)
 
 
 def _editable(session_id, session, summary):
@@ -144,6 +156,13 @@ def _editable(session_id, session, summary):
                 type="primary"
             )
 
+    # Regenerate button outside form
+    if st.button(
+        "🔄 Regenerate AI Summary",
+        use_container_width=True
+    ):
+        _regenerate(session_id, session)
+
     if save:
         with st.spinner("Saving changes..."):
             update_summary(session_id, ww, imp, rec, ai)
@@ -169,3 +188,39 @@ def _editable(session_id, session, summary):
             st.session_state['approve_session'] = session
         st.session_state['page'] = 'send_email'
         st.rerun()
+
+
+def _regenerate(session_id, session):
+    from services.ollama_service import generate_summary
+    confirm = st.warning(
+        "This will overwrite the current AI summary. "
+        "Any manual edits will be lost."
+    )
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(
+            "Yes, Regenerate",
+            type="primary",
+            use_container_width=True,
+            key="confirm_regen"
+        ):
+            with st.spinner(
+                "Regenerating AI summary... "
+                "this may take 30-60 seconds."
+            ):
+                try:
+                    generate_summary(session_id)
+                    st.toast(
+                        "Summary regenerated!",
+                        icon="✅"
+                    )
+                    st.rerun()
+                except Exception as e:
+                    st.error(str(e))
+    with col2:
+        if st.button(
+            "Cancel",
+            use_container_width=True,
+            key="cancel_regen"
+        ):
+            st.rerun()

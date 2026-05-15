@@ -3,6 +3,8 @@ from datetime import date
 from services.retro_service import create_retro_session
 from utils.helpers import validate_emails, format_date
 
+APP_URL = "https://scrum-retrospective-app.streamlit.app"
+
 
 def show():
     col_t, col_b = st.columns([4, 1])
@@ -119,10 +121,7 @@ def _handle(
             st.error(str(e))
             return
 
-    st.toast(
-        f"{sprint_name} created successfully!",
-        icon="✅"
-    )
+    st.toast(f"{sprint_name} created successfully!", icon="✅")
     st.session_state['retro_created'] = True
     st.session_state['created_session'] = session
     st.rerun()
@@ -156,7 +155,7 @@ def _show_success():
             st.write("**Passcode**")
             st.code(s.get('passcode'))
             st.write("**Submission Link**")
-            st.code("http://localhost:8501")
+            st.code(APP_URL)
             st.caption(
                 "Share the passcode privately. Keep it secure."
             )

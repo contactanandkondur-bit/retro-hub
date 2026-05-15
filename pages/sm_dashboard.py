@@ -7,6 +7,8 @@ from services.retro_service import (
 from services.ollama_service import generate_summary
 from database.db import get_client
 
+APP_URL = "https://scrum-retrospective-app.streamlit.app"
+
 
 def _get_closed_with_summary():
     supabase = get_client()
@@ -120,7 +122,7 @@ def _show_active(active):
             st.caption("TEAM PASSCODE")
             st.code(active['passcode'])
             st.caption("SUBMISSION LINK")
-            st.code("http://localhost:8501")
+            st.code(APP_URL)
             st.caption(
                 "Share the link and passcode privately with your team."
             )
