@@ -10,6 +10,35 @@ from services.pdf_service import generate_retro_pdf
 APP_URL = "https://scrum-retrospective-app.streamlit.app"
 
 
+def _format_bullets(text: str) -> str:
+    """
+    Normalises text so every non-empty line
+    starts with a bullet point.
+    """
+    if not text or not text.strip():
+        return text
+
+    lines = text.split('\n')
+    formatted = []
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+        # Remove existing bullet variants first
+        if line.startswith('•'):
+            line = line[1:].strip()
+        elif line.startswith('-'):
+            line = line[1:].strip()
+        elif line.startswith('*'):
+            line = line[1:].strip()
+        # Add standard bullet
+        if line:
+            formatted.append(f"• {line}")
+
+    return '\n'.join(formatted)
+
+
 def show():
     session_id = st.session_state.get('review_session_id')
     readonly = st.session_state.get('review_readonly', False)
@@ -126,12 +155,10 @@ def _readonly(summary, session, session_id):
         unsafe_allow_html=True
     )
 
-    # Regenerate confirmation
     if st.session_state.get('show_regen_confirm'):
         _regen_confirm(session_id, session, summary)
         return
 
-    # Read only sections
     sections = [
         ("What Went Well", "went_well_summary"),
         ("What Can Be Improved", "improve_summary"),
@@ -230,7 +257,6 @@ def _editable(session_id, session, summary, came_from_readonly=False):
                     type="primary"
                 )
 
-    # Regenerate button outside form
     if st.button(
         "Regenerate AI Summary",
         use_container_width=True
@@ -238,7 +264,6 @@ def _editable(session_id, session, summary, came_from_readonly=False):
         st.session_state['show_regen_confirm'] = True
         st.rerun()
 
-    # Regenerate confirmation
     if st.session_state.get('show_regen_confirm'):
         _regen_confirm(session_id, session, summary)
         return
@@ -249,27 +274,50 @@ def _editable(session_id, session, summary, came_from_readonly=False):
         st.rerun()
 
     if save:
+        # Auto format all sections before saving
         with st.spinner("Saving changes..."):
-            update_summary(session_id, ww, imp, rec, ai)
+            update_summary(
+                session_id,
+                _format_bullets(ww),
+                _format_bullets(imp),
+                _format_bullets(rec),
+                _format_bullets(ai)
+            )
             save_action_items(
-                session_id, session['sprint_name'], ai
+                session_id,
+                session['sprint_name'],
+                _format_bullets(ai)
             )
         st.toast("Changes saved.", icon="✅")
         st.session_state['summary_edit_mode'] = False
         st.rerun()
 
     if approve:
+        # Auto format all sections before approving
+        formatted_ww = _format_bullets(ww)
+        formatted_imp = _format_bullets(imp)
+        formatted_rec = _format_bullets(rec)
+        formatted_ai = _format_bullets(ai)
+
         with st.spinner("Preparing email preview..."):
-            update_summary(session_id, ww, imp, rec, ai)
+            update_summary(
+                session_id,
+                formatted_ww,
+                formatted_imp,
+                formatted_rec,
+                formatted_ai
+            )
             save_action_items(
-                session_id, session['sprint_name'], ai
+                session_id,
+                session['sprint_name'],
+                formatted_ai
             )
             st.session_state['approve_session_id'] = session_id
             st.session_state['approve_summary'] = {
-                'went_well': ww,
-                'improve': imp,
-                'recognition': rec,
-                'action_items': ai
+                'went_well': formatted_ww,
+                'improve': formatted_imp,
+                'recognition': formatted_rec,
+                'action_items': formatted_ai
             }
             st.session_state['approve_session'] = session
         st.session_state['summary_edit_mode'] = False
@@ -278,15 +326,11 @@ def _editable(session_id, session, summary, came_from_readonly=False):
 
 
 def _regen_confirm(session_id, session, summary):
-    """
-    Shows regenerate confirmation with strong warning
-    if summary has been manually edited.
-    """
     is_edited = summary.get('is_edited', 0)
 
     if is_edited:
         st.error(
-            "⚠️ You have manually edited this summary. "
+            "You have manually edited this summary. "
             "Regenerating will replace everything with fresh AI output "
             "from the original team responses. "
             "All your manual edits will be permanently lost."
