@@ -13,6 +13,7 @@ APP_URL = "https://scrum-retrospective-app.streamlit.app"
 def show():
     session_id = st.session_state.get('review_session_id')
     readonly = st.session_state.get('review_readonly', False)
+    edit_mode = st.session_state.get('summary_edit_mode', False)
 
     col_t, col_b = st.columns([4, 1])
     with col_t:
@@ -23,6 +24,7 @@ def show():
             unsafe_allow_html=True
         )
         if st.button("← Back", use_container_width=True):
+            st.session_state['summary_edit_mode'] = False
             st.session_state['page'] = 'sm_dashboard'
             st.rerun()
 
@@ -73,7 +75,7 @@ def show():
         try:
             pdf_bytes = generate_retro_pdf(session, summary)
             st.download_button(
-                label="⬇ Download PDF",
+                label="Download PDF",
                 data=pdf_bytes,
                 file_name=(
                     f"{session['sprint_name'].replace(' ', '_')}"
@@ -90,13 +92,45 @@ def show():
         unsafe_allow_html=True
     )
 
-    if readonly:
+    # Route to correct view
+    if readonly and not edit_mode:
         _readonly(summary, session, session_id)
     else:
-        _editable(session_id, session, summary)
+        _editable(session_id, session, summary, readonly)
 
 
 def _readonly(summary, session, session_id):
+    # Action buttons row
+    col_edit, col_regen = st.columns(2)
+
+    with col_edit:
+        if st.button(
+            "✏️ Edit Summary",
+            use_container_width=True,
+            type="primary"
+        ):
+            st.session_state['summary_edit_mode'] = True
+            st.rerun()
+
+    with col_regen:
+        if st.button(
+            "🔄 Regenerate AI Summary",
+            use_container_width=True
+        ):
+            st.session_state['show_regen_confirm'] = True
+            st.rerun()
+
+    # Regenerate confirmation
+    if st.session_state.get('show_regen_confirm'):
+        _regen_confirm(session_id, session)
+        return
+
+    st.markdown(
+        "<div style='height:0.75rem'></div>",
+        unsafe_allow_html=True
+    )
+
+    # Read only sections
     sections = [
         ("What Went Well", "went_well_summary"),
         ("What Can Be Improved", "improve_summary"),
@@ -113,25 +147,14 @@ def _readonly(summary, session, session_id):
             else:
                 st.caption("No content.")
 
-    st.markdown(
-        "<div style='height:0.75rem'></div>",
-        unsafe_allow_html=True
-    )
 
-    if st.button(
-        "🔄 Regenerate AI Summary",
-        use_container_width=True
-    ):
-        _regenerate(session_id, session)
-
-
-def _editable(session_id, session, summary):
+def _editable(session_id, session, summary, came_from_readonly=False):
     st.caption(
-        "Edit any section below before approving. "
-        "All changes are saved to the database."
+        "Edit any section below. "
+        "Click Save to update the summary."
     )
 
-    with st.form("summary_form"):
+    with st.form("summary_edit_form"):
         with st.container(border=True):
             st.write("**What Went Well**")
             ww = st.text_area(
@@ -168,24 +191,63 @@ def _editable(session_id, session, summary):
                 label_visibility="collapsed"
             )
 
-        c1, c2 = st.columns(2)
-        with c1:
-            save = st.form_submit_button(
-                "Save Changes",
-                use_container_width=True
-            )
-        with c2:
-            approve = st.form_submit_button(
-                "Approve & Send Email →",
-                use_container_width=True,
-                type="primary"
-            )
+        st.markdown(
+            "<div style='height:0.5rem'></div>",
+            unsafe_allow_html=True
+        )
 
-    if st.button(
-        "🔄 Regenerate AI Summary",
-        use_container_width=True
-    ):
-        _regenerate(session_id, session)
+        if came_from_readonly:
+            # Came from approved retro — only save button
+            col1, col2 = st.columns(2)
+            with col1:
+                save = st.form_submit_button(
+                    "Save Changes",
+                    use_container_width=True,
+                    type="primary"
+                )
+            with col2:
+                cancel = st.form_submit_button(
+                    "Cancel",
+                    use_container_width=True
+                )
+            approve = False
+        else:
+            # Came from closed retro — save + approve
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                save = st.form_submit_button(
+                    "Save Changes",
+                    use_container_width=True
+                )
+            with col2:
+                cancel = st.form_submit_button(
+                    "Cancel",
+                    use_container_width=True
+                )
+            with col3:
+                approve = st.form_submit_button(
+                    "Approve & Send Email →",
+                    use_container_width=True,
+                    type="primary"
+                )
+
+    # Regenerate button outside form
+    if not came_from_readonly:
+        if st.button(
+            "🔄 Regenerate AI Summary",
+            use_container_width=True
+        ):
+            st.session_state['show_regen_confirm'] = True
+            st.rerun()
+
+    # Regenerate confirmation
+    if st.session_state.get('show_regen_confirm'):
+        _regen_confirm(session_id, session)
+        return
+
+    if cancel:
+        st.session_state['summary_edit_mode'] = False
+        st.rerun()
 
     if save:
         with st.spinner("Saving changes..."):
@@ -194,6 +256,7 @@ def _editable(session_id, session, summary):
                 session_id, session['sprint_name'], ai
             )
         st.toast("Changes saved.", icon="✅")
+        st.session_state['summary_edit_mode'] = False
         st.rerun()
 
     if approve:
@@ -210,12 +273,12 @@ def _editable(session_id, session, summary):
                 'action_items': ai
             }
             st.session_state['approve_session'] = session
+        st.session_state['summary_edit_mode'] = False
         st.session_state['page'] = 'send_email'
         st.rerun()
 
 
-def _regenerate(session_id, session):
-    from services.ollama_service import generate_summary
+def _regen_confirm(session_id, session):
     st.warning(
         "This will overwrite the current AI summary. "
         "Any manual edits will be lost."
@@ -233,7 +296,10 @@ def _regenerate(session_id, session):
                 "this may take 30-60 seconds."
             ):
                 try:
+                    from services.ollama_service import generate_summary
                     generate_summary(session_id)
+                    st.session_state['show_regen_confirm'] = False
+                    st.session_state['summary_edit_mode'] = False
                     st.toast("Summary regenerated!", icon="✅")
                     st.rerun()
                 except Exception as e:
@@ -244,4 +310,5 @@ def _regenerate(session_id, session):
             use_container_width=True,
             key="cancel_regen"
         ):
+            st.session_state['show_regen_confirm'] = False
             st.rerun()
